@@ -434,14 +434,8 @@ public struct OpenAILanguageModel: LanguageModel {
             fatalError("OpenAILanguageModel only supports generating String content")
         }
 
-        var messages: [OpenAIMessage] = []
-        if let systemSegments = extractInstructionSegments(from: session) {
-            messages.append(
-                OpenAIMessage(role: .system, content: .blocks(convertSegmentsToOpenAIBlocks(systemSegments)))
-            )
-        }
-        let userSegments = extractPromptSegments(from: session, fallbackText: prompt.description)
-        messages.append(OpenAIMessage(role: .user, content: .blocks(convertSegmentsToOpenAIBlocks(userSegments))))
+        // Build messages from full transcript history
+        let messages = convertTranscriptToOpenAIMessages(session: session, fallbackPrompt: prompt.description)
 
         // Convert tools if any are available in the session
         let openAITools: [OpenAITool]? = {
@@ -619,14 +613,8 @@ public struct OpenAILanguageModel: LanguageModel {
             fatalError("OpenAILanguageModel only supports generating String content")
         }
 
-        var messages: [OpenAIMessage] = []
-        if let systemSegments = extractInstructionSegments(from: session) {
-            messages.append(
-                OpenAIMessage(role: .system, content: .blocks(convertSegmentsToOpenAIBlocks(systemSegments)))
-            )
-        }
-        let userSegments = extractPromptSegments(from: session, fallbackText: prompt.description)
-        messages.append(OpenAIMessage(role: .user, content: .blocks(convertSegmentsToOpenAIBlocks(userSegments))))
+        // Build messages from full transcript history
+        let messages = convertTranscriptToOpenAIMessages(session: session, fallbackPrompt: prompt.description)
 
         // Convert tools if any are available in the session
         let openAITools: [OpenAITool]? = {
@@ -1226,6 +1214,61 @@ private enum Block: Hashable, Codable, Sendable {
     }
 }
 
+private func convertTranscriptToOpenAIMessages(
+    session: LanguageModelSession,
+    fallbackPrompt: String
+) -> [OpenAIMessage] {
+    var messages: [OpenAIMessage] = []
+
+    // Check if instructions are already in transcript
+    let hasInstructionsInTranscript = session.transcript.contains {
+        if case .instructions = $0 { return true }
+        return false
+    }
+
+    // Add instructions from session if present and not in transcript
+    if !hasInstructionsInTranscript,
+        let instructions = session.instructions?.description,
+        !instructions.isEmpty
+    {
+        messages.append(OpenAIMessage(role: .system, content: .text(instructions)))
+    }
+
+    // Convert each transcript entry
+    for entry in session.transcript {
+        switch entry {
+        case .instructions(let instr):
+            let blocks = convertSegmentsToOpenAIBlocks(instr.segments)
+            messages.append(OpenAIMessage(role: .system, content: .blocks(blocks)))
+
+        case .prompt(let prompt):
+            let blocks = convertSegmentsToOpenAIBlocks(prompt.segments)
+            messages.append(OpenAIMessage(role: .user, content: .blocks(blocks)))
+
+        case .response(let response):
+            let blocks = convertSegmentsToOpenAIBlocks(response.segments)
+            messages.append(OpenAIMessage(role: .assistant, content: .blocks(blocks)))
+
+        case .toolCalls:
+            // Tool calls are handled inline during generation loop
+            // They are part of the assistant's response and get added when tool outputs follow
+            break
+
+        case .toolOutput(let toolOutput):
+            let blocks = convertSegmentsToOpenAIBlocks(toolOutput.segments)
+            messages.append(OpenAIMessage(role: .tool(id: toolOutput.id), content: .blocks(blocks)))
+        }
+    }
+
+    // If no user message in transcript, add fallback prompt
+    let hasUserMessage = messages.contains { $0.role == .user }
+    if !hasUserMessage {
+        messages.append(OpenAIMessage(role: .user, content: .text(fallbackPrompt)))
+    }
+
+    return messages
+}
+
 private func convertSegmentsToOpenAIBlocks(_ segments: [Transcript.Segment]) -> [Block] {
     var blocks: [Block] = []
     blocks.reserveCapacity(segments.count)
@@ -1252,29 +1295,6 @@ private func convertSegmentsToOpenAIBlocks(_ segments: [Transcript.Segment]) -> 
         }
     }
     return blocks
-}
-
-private func extractPromptSegments(from session: LanguageModelSession, fallbackText: String) -> [Transcript.Segment] {
-    // Prefer the most recent Transcript.Prompt entry if present
-    for entry in session.transcript.reversed() {
-        if case .prompt(let p) = entry {
-            return p.segments
-        }
-    }
-    return [.text(.init(content: fallbackText))]
-}
-
-private func extractInstructionSegments(from session: LanguageModelSession) -> [Transcript.Segment]? {
-    // Prefer the first Transcript.Instructions entry if present
-    for entry in session.transcript {
-        if case .instructions(let i) = entry {
-            return i.segments
-        }
-    }
-    if let instructions = session.instructions?.description, !instructions.isEmpty {
-        return [.text(.init(content: instructions))]
-    }
-    return nil
 }
 
 private struct OpenAITool: Hashable, Codable, Sendable {
