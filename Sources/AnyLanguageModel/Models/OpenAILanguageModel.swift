@@ -437,11 +437,6 @@ public struct OpenAILanguageModel: LanguageModel {
         // Build messages: instructions + conversation history + current prompt
         var messages: [OpenAIMessage] = []
 
-        // Add instructions
-        if let systemSegments = extractInstructionSegments(from: session) {
-            messages.append(OpenAIMessage(role: .system, content: .blocks(convertSegmentsToOpenAIBlocks(systemSegments))))
-        }
-
         // Add conversation history (previous turns, excluding current prompt)
         messages.append(contentsOf: extractConversationHistory(from: session))
 
@@ -649,11 +644,6 @@ public struct OpenAILanguageModel: LanguageModel {
                         // Build messages: instructions + conversation history + current prompt
                         var messages: [OpenAIMessage] = []
 
-                        // Add instructions
-                        if let systemSegments = extractInstructionSegments(from: session) {
-                            messages.append(OpenAIMessage(role: .system, content: .blocks(convertSegmentsToOpenAIBlocks(systemSegments))))
-                        }
-
                         // Add conversation history (previous turns, excluding current prompt)
                         messages.append(contentsOf: extractConversationHistory(from: session))
 
@@ -727,11 +717,6 @@ public struct OpenAILanguageModel: LanguageModel {
                     do {
                         // Build messages: instructions + conversation history + current prompt
                         var messages: [OpenAIMessage] = []
-
-                        // Add instructions
-                        if let systemSegments = extractInstructionSegments(from: session) {
-                            messages.append(OpenAIMessage(role: .system, content: .blocks(convertSegmentsToOpenAIBlocks(systemSegments))))
-                        }
 
                         // Add conversation history (previous turns, excluding current prompt)
                         messages.append(contentsOf: extractConversationHistory(from: session))
@@ -1323,18 +1308,6 @@ private func extractConversationHistory(from session: LanguageModelSession) -> [
 private func extractPromptSegments(from session: LanguageModelSession, fallbackText: String) -> [Transcript.Segment] {
     // Always use fallbackText for current prompt (reliable source)
     return [.text(.init(content: fallbackText))]
-}
-
-private func extractInstructionSegments(from session: LanguageModelSession) -> [Transcript.Segment]? {
-    for entry in session.transcript {
-        if case .instructions(let i) = entry {
-            return i.segments
-        }
-    }
-    if let instructions = session.instructions?.description, !instructions.isEmpty {
-        return [.text(.init(content: instructions))]
-    }
-    return nil
 }
 
 private struct OpenAITool: Hashable, Codable, Sendable {
