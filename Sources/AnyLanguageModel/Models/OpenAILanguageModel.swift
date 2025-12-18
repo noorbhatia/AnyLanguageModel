@@ -434,8 +434,13 @@ public struct OpenAILanguageModel: LanguageModel {
             fatalError("OpenAILanguageModel only supports generating String content")
         }
 
-        // Build messages from full transcript history
-        let messages = convertTranscriptToOpenAIMessages(session: session, fallbackPrompt: prompt.description)
+        // Read transcript on MainActor to ensure we see the latest value (including current prompt)
+        let currentTranscript = await MainActor.run { session.transcript }
+        let messages = convertTranscriptToOpenAIMessages(
+            transcript: currentTranscript,
+            instructionsText: session.instructions?.description,
+            fallbackPrompt: prompt.description
+        )
 
         // Convert tools if any are available in the session
         let openAITools: [OpenAITool]? = {
@@ -613,9 +618,6 @@ public struct OpenAILanguageModel: LanguageModel {
             fatalError("OpenAILanguageModel only supports generating String content")
         }
 
-        // Build messages from full transcript history
-        let messages = convertTranscriptToOpenAIMessages(session: session, fallbackPrompt: prompt.description)
-
         // Convert tools if any are available in the session
         let openAITools: [OpenAITool]? = {
             guard !session.tools.isEmpty else { return nil }
@@ -627,22 +629,32 @@ public struct OpenAILanguageModel: LanguageModel {
             return converted
         }()
 
+    
+
         switch apiVariant {
         case .responses:
-            let params = Responses.createRequestBody(
-                model: model,
-                messages: messages,
-                tools: openAITools,
-                options: options,
-                stream: true
-            )
-
             let url = baseURL.appendingPathComponent("responses")
 
             let stream: AsyncThrowingStream<LanguageModelSession.ResponseStream<Content>.Snapshot, any Error> = .init {
                 continuation in
                 let task = Task { @Sendable in
                     do {
+                        // Read transcript on MainActor to ensure we see the latest value (including current prompt)
+                        let currentTranscript = await MainActor.run { session.transcript }
+                        let messages = convertTranscriptToOpenAIMessages(
+                            transcript: currentTranscript,
+                            instructionsText: session.instructions?.description,
+                            fallbackPrompt: prompt.description
+                        )
+
+                        let params = Responses.createRequestBody(
+                            model: self.model,
+                            messages: messages,
+                            tools: openAITools,
+                            options: options,
+                            stream: true
+                        )
+
                         let body = try JSONEncoder().encode(params)
 
                         let events: AsyncThrowingStream<OpenAIResponsesServerEvent, any Error> =
@@ -692,13 +704,6 @@ public struct OpenAILanguageModel: LanguageModel {
             return LanguageModelSession.ResponseStream(stream: stream)
 
         case .chatCompletions:
-            let params = ChatCompletions.createRequestBody(
-                model: model,
-                messages: messages,
-                tools: openAITools,
-                options: options,
-                stream: true
-            )
 
             let url = baseURL.appendingPathComponent("chat/completions")
 
@@ -706,6 +711,19 @@ public struct OpenAILanguageModel: LanguageModel {
                 continuation in
                 let task = Task { @Sendable in
                     do {
+                        let currentTranscript = await MainActor.run { session.transcript }
+                        let messages = convertTranscriptToOpenAIMessages(
+                            transcript: currentTranscript,
+                            instructionsText: session.instructions?.description,
+                            fallbackPrompt: prompt.description
+                        )
+                        let params = ChatCompletions.createRequestBody(
+                            model: model,
+                            messages: messages,
+                            tools: openAITools,
+                            options: options,
+                            stream: true
+                        )
                         let body = try JSONEncoder().encode(params)
 
                         let events: AsyncThrowingStream<OpenAIChatCompletionsChunk, any Error> =
@@ -1215,27 +1233,28 @@ private enum Block: Hashable, Codable, Sendable {
 }
 
 private func convertTranscriptToOpenAIMessages(
-    session: LanguageModelSession,
+    transcript: Transcript,
+    instructionsText: String?,
     fallbackPrompt: String
 ) -> [OpenAIMessage] {
     var messages: [OpenAIMessage] = []
 
     // Check if instructions are already in transcript
-    let hasInstructionsInTranscript = session.transcript.contains {
+    let hasInstructionsInTranscript = transcript.contains {
         if case .instructions = $0 { return true }
         return false
     }
 
     // Add instructions from session if present and not in transcript
     if !hasInstructionsInTranscript,
-        let instructions = session.instructions?.description,
-        !instructions.isEmpty
+        let instructionsText = instructionsText,
+        !instructionsText.isEmpty
     {
-        messages.append(OpenAIMessage(role: .system, content: .text(instructions)))
+        messages.append(OpenAIMessage(role: .system, content: .text(instructionsText)))
     }
 
     // Convert each transcript entry
-    for entry in session.transcript {
+    for entry in transcript {
         switch entry {
         case .instructions(let instr):
             let blocks = convertSegmentsToOpenAIBlocks(instr.segments)
