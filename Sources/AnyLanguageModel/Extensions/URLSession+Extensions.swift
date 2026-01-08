@@ -23,6 +23,7 @@ extension URLSession {
     ) async throws -> T {
         var request = URLRequest(url: url)
         request.httpMethod = method.rawValue
+        request.timeoutInterval = 300
         request.addValue("application/json", forHTTPHeaderField: "Accept")
 
         for (key, value) in headers {
@@ -72,6 +73,7 @@ extension URLSession {
                 do {
                     var request = URLRequest(url: url)
                     request.httpMethod = method.rawValue
+                    request.timeoutInterval = 300
                     request.addValue("application/json", forHTTPHeaderField: "Accept")
 
                     for (key, value) in headers {
@@ -131,6 +133,7 @@ extension URLSession {
                 do {
                     var request = URLRequest(url: url)
                     request.httpMethod = method.rawValue
+                    request.timeoutInterval = 300
                     request.addValue("text/event-stream", forHTTPHeaderField: "Accept")
 
                     for (key, value) in headers {
@@ -297,7 +300,7 @@ extension URLSession {
     }
 #endif
 
-enum URLSessionError: Error, CustomStringConvertible {
+enum URLSessionError: Error, LocalizedError, CustomStringConvertible {
     case invalidResponse
     case httpError(statusCode: Int, detail: String)
     case decodingError(detail: String)
@@ -312,4 +315,6 @@ enum URLSessionError: Error, CustomStringConvertible {
             return "Decoding error: \(detail)"
         }
     }
+
+    var errorDescription: String? { description }
 }
