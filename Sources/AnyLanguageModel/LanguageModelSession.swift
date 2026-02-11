@@ -91,6 +91,15 @@ public final class LanguageModelSession: @unchecked Sendable {
         model.prewarm(for: self, promptPrefix: promptPrefix)
     }
 
+    /// Appends a transcript entry. Used by providers during streaming to record
+    /// intermediate entries (e.g. tool calls and tool outputs) that cannot be
+    /// communicated through `ResponseStream.Snapshot`.
+    nonisolated func appendTranscriptEntry(_ entry: Transcript.Entry) async {
+        await MainActor.run {
+            self.transcript.append(entry)
+        }
+    }
+
     nonisolated private func beginResponding() async {
         let count = await respondingState.increment()
         let active = count > 0

@@ -340,37 +340,117 @@ import Foundation
                         // Get cached or load fresh ModelContext
                         let context = try await loadContext(modelId: modelId, hub: hub, directory: directory)
 
-                        // Build chat inside task to avoid Sendable issues
                         let generateParameters = toGenerateParameters(options)
-                        let chat = convertTranscriptToMLXChat(session: session, fallbackPrompt: prompt.description)
 
-                        let userInput = MLXLMCommon.UserInput(
-                            chat: chat,
-                            processing: .init(resize: .init(width: 512, height: 512)),
-                            tools: nil
-                        )
-                        let lmInput = try await context.processor.prepare(input: userInput)
+                        // Convert session tools to MLX ToolSpec format
+                        let toolSpecs: [ToolSpec]? =
+                            session.tools.isEmpty
+                            ? nil
+                            : session.tools.map { tool in
+                                convertToolToMLXSpec(tool)
+                            }
 
-                        let mlxStream = try MLXLMCommon.generate(
-                            input: lmInput,
-                            parameters: generateParameters,
-                            context: context
+                        // Build mutable chat history
+                        var chat = convertTranscriptToMLXChat(
+                            session: session,
+                            fallbackPrompt: prompt.description
                         )
 
                         var accumulatedText = ""
-                        for await item in mlxStream {
+
+                        // Loop until no more tool calls
+                        generationLoop: while true {
                             if Task.isCancelled { break }
 
-                            switch item {
-                            case .chunk(let text):
-                                accumulatedText += text
-                                let raw = GeneratedContent(accumulatedText)
-                                let content: Content.PartiallyGenerated = (accumulatedText as! Content)
-                                    .asPartiallyGenerated()
-                                continuation.yield(.init(content: content, rawContent: raw))
-                            case .info, .toolCall:
-                                break
+                            let userInput = MLXLMCommon.UserInput(
+                                chat: chat,
+                                processing: .init(resize: .init(width: 512, height: 512)),
+                                tools: toolSpecs,
+                            )
+                            let lmInput = try await context.processor.prepare(input: userInput)
+
+                            let mlxStream = try MLXLMCommon.generate(
+                                input: lmInput,
+                                parameters: generateParameters,
+                                context: context
+                            )
+
+                            var iterationChunks: [String] = []
+                            var collectedToolCalls: [MLXLMCommon.ToolCall] = []
+
+                            for await item in mlxStream {
+                                if Task.isCancelled { break }
+
+                                switch item {
+                                case .chunk(let text):
+                                    iterationChunks.append(text)
+                                    accumulatedText += text
+                                    let raw = GeneratedContent(accumulatedText)
+                                    let content: Content.PartiallyGenerated = (accumulatedText as! Content)
+                                        .asPartiallyGenerated()
+                                    continuation.yield(.init(content: content, rawContent: raw))
+                                case .toolCall(let call):
+                                    collectedToolCalls.append(call)
+                                case .info:
+                                    break
+                                }
                             }
+
+                            if Task.isCancelled { break }
+
+                            let assistantText = iterationChunks.joined()
+
+                            // Add assistant response to local chat history
+                            if !assistantText.isEmpty {
+                                chat.append(.assistant(assistantText))
+                            }
+
+                            // If there are tool calls, execute them and continue
+                            if !collectedToolCalls.isEmpty {
+                                let resolution = try await resolveToolCalls(
+                                    collectedToolCalls,
+                                    session: session
+                                )
+
+                                if Task.isCancelled { break }
+
+                                switch resolution {
+                                case .stop(let calls):
+                                    if !calls.isEmpty {
+                                        await session.appendTranscriptEntry(
+                                            .toolCalls(Transcript.ToolCalls(calls))
+                                        )
+                                    }
+                                    // Yield final snapshot so consumers see accumulated text
+                                    let raw = GeneratedContent(accumulatedText)
+                                    let content: Content.PartiallyGenerated = (accumulatedText as! Content)
+                                        .asPartiallyGenerated()
+                                    continuation.yield(.init(content: content, rawContent: raw))
+                                    break generationLoop
+
+                                case .invocations(let invocations):
+                                    if !invocations.isEmpty {
+                                        await session.appendTranscriptEntry(
+                                            .toolCalls(Transcript.ToolCalls(invocations.map(\.call)))
+                                        )
+
+                                        for invocation in invocations {
+                                            let outputText = toolOutputToJSON(invocation.output)
+                                            await session.appendTranscriptEntry(
+                                                .toolOutput(invocation.output)
+                                            )
+
+                                            chat.append(.tool(outputText))
+                                        }
+
+                                        // Continue loop to generate with tool results
+                                        continue
+                                    }
+                                }
+                            }
+
+                            // No more tool calls, exit loop
+                            break
                         }
 
                         continuation.finish()

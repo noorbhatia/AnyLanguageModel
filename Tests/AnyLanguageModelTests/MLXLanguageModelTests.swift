@@ -95,6 +95,40 @@ import Testing
             }
         }
 
+        @Test func streamingWithTools() async throws {
+            let weatherTool = spy(on: WeatherTool())
+            let session = LanguageModelSession(
+                model: model,
+                tools: [weatherTool],
+                instructions: "You are a helpful assistant. Use available tools when needed."
+            )
+
+            let stream = session.streamResponse(to: "How's the weather in San Francisco?")
+            var chunks: [String] = []
+
+            for try await response in stream {
+                chunks.append(response.content)
+            }
+
+            #expect(!chunks.isEmpty)
+
+            // During streaming, MLX appends tool entries directly to session.transcript
+            // (Snapshot doesn't carry transcriptEntries like Response does)
+            var foundToolOutput = false
+            for case let .toolOutput(toolOutput) in session.transcript {
+                #expect(!toolOutput.id.isEmpty)
+                #expect(toolOutput.toolName == weatherTool.name)
+                foundToolOutput = true
+            }
+            #expect(foundToolOutput)
+
+            let calls = await weatherTool.calls
+            #expect(calls.count >= 1)
+            if let first = calls.first {
+                #expect(first.arguments.city.contains("San Francisco"))
+            }
+        }
+
         @Test func multimodalWithImageURL() async throws {
             let transcript = Transcript(entries: [
                 .prompt(
