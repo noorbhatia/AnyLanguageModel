@@ -1079,26 +1079,27 @@ private enum Responses {
 
             case .raw(rawContent: let rawContent):
                 // Convert Chat Completions assistant+tool_calls to Responses API function_call items
-                if case .object(let dict) = rawContent,
-                    case .string(let role) = dict["role"],
-                    role == "assistant",
-                    case .array(let toolCallsArr) = dict["tool_calls"]
+                if case .object(let assistantMessageObject) = rawContent,
+                    case .string(let messageRole) = assistantMessageObject["role"],
+                    messageRole == "assistant",
+                    case .array(let assistantToolCalls) = assistantMessageObject["tool_calls"]
                 {
-                    for tc in toolCallsArr {
-                        guard case .object(let tcDict) = tc,
-                            case .string(let tcId) = tcDict["id"],
-                            case .object(let fnDict) = tcDict["function"],
-                            case .string(let fnName) = fnDict["name"],
-                            case .string(let fnArgs) = fnDict["arguments"]
-                        else { continue }
-                        outputs.append(
-                            .object([
-                                "type": .string("function_call"),
-                                "call_id": .string(tcId),
-                                "name": .string(fnName),
-                                "arguments": .string(fnArgs),
-                            ])
-                        )
+                    for assistantToolCall in assistantToolCalls {
+                        if case .object(let toolCallObject) = assistantToolCall,
+                            case .string(let toolCallID) = toolCallObject["id"],
+                            case .object(let functionCallObject) = toolCallObject["function"],
+                            case .string(let functionName) = functionCallObject["name"],
+                            case .string(let functionArguments) = functionCallObject["arguments"]
+                        {
+                            outputs.append(
+                                .object([
+                                    "type": .string("function_call"),
+                                    "call_id": .string(toolCallID),
+                                    "name": .string(functionName),
+                                    "arguments": .string(functionArguments),
+                                ])
+                            )
+                        }
                     }
                 } else {
                     outputs.append(rawContent)
