@@ -255,6 +255,28 @@ import Testing
             #expect([Priority.low, Priority.medium, Priority.high].contains(response.content))
         }
 
+        @Test func withAdditionalContext() async throws {
+            let session = LanguageModelSession(model: model)
+
+            var options = GenerationOptions(
+                temperature: 0.7,
+                maximumResponseTokens: 32
+            )
+            options[custom: MLXLanguageModel.self] = .init(
+                additionalContext: [
+                    "user_name": .string("Alice"),
+                    "turn_count": .int(3),
+                    "verbose": .bool(true),
+                ]
+            )
+
+            let response = try await session.respond(
+                to: "Say hello",
+                options: options
+            )
+            #expect(!response.content.isEmpty)
+        }
+
         @Test func unavailableForNonexistentModel() async {
             let model = MLXLanguageModel(modelId: "mlx-community/does-not-exist-anylanguagemodel-test")
             await model.removeFromCache()

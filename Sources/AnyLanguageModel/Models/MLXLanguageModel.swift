@@ -183,6 +183,16 @@ import Foundation
     /// let model = MLXLanguageModel(modelId: "mlx-community/Llama-3.2-3B-Instruct-4bit")
     /// ```
     public struct MLXLanguageModel: LanguageModel {
+        /// Custom generation options for MLX models.
+        public struct CustomGenerationOptions: AnyLanguageModel.CustomGenerationOptions {
+            /// Additional key-value pairs injected into the chat template rendering context.
+            public var additionalContext: [String: MLXLMCommon.JSONValue]?
+
+            public init(additionalContext: [String: MLXLMCommon.JSONValue]? = nil) {
+                self.additionalContext = additionalContext
+            }
+        }
+
         /// The reason the model is unavailable.
         public enum UnavailableReason: Sendable, Equatable, Hashable {
             /// The model has not been loaded into memory yet.
@@ -813,6 +823,11 @@ import Foundation
             // Map AnyLanguageModel GenerationOptions to MLX GenerateParameters
             let generateParameters = toGenerateParameters(options)
 
+            // Extract additional context from custom options
+            let additionalContext: [String: any Sendable]? = options[custom: MLXLanguageModel.self]
+                .flatMap { $0.additionalContext }
+                .map { $0.mapValues { $0.toSendable() } }
+
             // Build chat history from full transcript
             var chat = convertTranscriptToMLXChat(session: session, fallbackPrompt: prompt.description)
 
@@ -828,7 +843,8 @@ import Foundation
                 let userInput = MLXLMCommon.UserInput(
                     chat: chat,
                     processing: .init(resize: .init(width: 512, height: 512)),
-                    tools: toolSpecs
+                    tools: toolSpecs,
+                    additionalContext: additionalContext,
                 )
                 let lmInput = try await context.processor.prepare(input: userInput)
                 let resolved = resolveCache(
@@ -991,10 +1007,17 @@ import Foundation
 
                         // Build chat inside task to avoid Sendable issues
                         let generateParameters = toGenerateParameters(options)
-                        let userInput = makeUserInput(
-                            session: session,
-                            fallbackPrompt: prompt.description,
-                            tools: nil
+                        let chat = convertTranscriptToMLXChat(session: session, fallbackPrompt: prompt.description)
+
+                        let additionalContext: [String: any Sendable]? = options[custom: MLXLanguageModel.self]
+                            .flatMap { $0.additionalContext }
+                            .map { $0.mapValues { $0.toSendable() } }
+
+                        let userInput = MLXLMCommon.UserInput(
+                            chat: chat,
+                            processing: .init(resize: .init(width: 512, height: 512)),
+                            tools: nil,
+                            additionalContext: additionalContext
                         )
                         let lmInput = try await context.processor.prepare(input: userInput)
                         let resolved = resolveCache(
@@ -1529,10 +1552,16 @@ import Foundation
         let baseChat = convertTranscriptToMLXChat(session: session, fallbackPrompt: prompt.description)
         let schemaPrompt = includeSchemaInPrompt ? schemaPrompt(for: schema) : nil
         let chat = normalizeChatForStructuredGeneration(baseChat, schemaPrompt: schemaPrompt)
+
+        let additionalContext: [String: any Sendable]? = options[custom: MLXLanguageModel.self]
+            .flatMap { $0.additionalContext }
+            .map { $0.mapValues { $0.toSendable() } }
+
         let userInput = MLXLMCommon.UserInput(
             chat: chat,
             processing: .init(resize: .init(width: 512, height: 512)),
-            tools: nil
+            tools: nil,
+            additionalContext: additionalContext,
         )
         let lmInput = try await context.processor.prepare(input: userInput)
 
@@ -1771,6 +1800,20 @@ import Foundation
 
             let sampledToken = sampler.sample(logits: maskedLogits)
             return sampledToken.item(Int.self)
+        }
+    }
+    extension MLXLMCommon.JSONValue {
+        /// Recursively converts a `JSONValue` to its primitive Swift equivalent.
+        func toSendable() -> any Sendable {
+            switch self {
+            case .string(let s): return s
+            case .int(let i): return i
+            case .double(let d): return d
+            case .bool(let b): return b
+            case .null: return NSNull()
+            case .array(let arr): return arr.map { $0.toSendable() }
+            case .object(let obj): return obj.mapValues { $0.toSendable() }
+            }
         }
     }
 #endif  // MLX
