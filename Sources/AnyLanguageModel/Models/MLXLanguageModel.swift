@@ -183,16 +183,6 @@ import Foundation
     /// let model = MLXLanguageModel(modelId: "mlx-community/Llama-3.2-3B-Instruct-4bit")
     /// ```
     public struct MLXLanguageModel: LanguageModel {
-        /// Custom generation options for MLX models.
-        public struct CustomGenerationOptions: AnyLanguageModel.CustomGenerationOptions {
-            /// Additional key-value pairs injected into the chat template rendering context.
-            public var additionalContext: [String: MLXLMCommon.JSONValue]?
-
-            public init(additionalContext: [String: MLXLMCommon.JSONValue]? = nil) {
-                self.additionalContext = additionalContext
-            }
-        }
-
         /// The reason the model is unavailable.
         public enum UnavailableReason: Sendable, Equatable, Hashable {
             /// The model has not been loaded into memory yet.
@@ -218,6 +208,12 @@ import Foundation
             public var kvGroupSize: Int
             /// Sets the token offset where quantized KV storage starts.
             public var quantizedKVStart: Int
+            /// Additional key-value pairs injected into the chat template rendering context.
+            public var additionalContext: [String: MLXLMCommon.JSONValue]?
+
+            var additionalContextForUserInput: [String: any Sendable]? {
+                additionalContext?.mapValues { $0.toSendable() }
+            }
 
             /// Creates MLX-specific generation options.
             ///
@@ -228,16 +224,20 @@ import Foundation
             ///     Pass `nil` to disable KV quantization.
             ///   - kvGroupSize: The token group size used for KV quantization.
             ///   - quantizedKVStart: The token index where quantized KV storage begins.
+            ///   - additionalContext: Additional key-value pairs injected into the chat
+            ///     template rendering context.
             public init(
                 maxKVSize: Int? = nil,
                 kvBits: Int? = nil,
                 kvGroupSize: Int = 64,
-                quantizedKVStart: Int = 0
+                quantizedKVStart: Int = 0,
+                additionalContext: [String: MLXLMCommon.JSONValue]? = nil
             ) {
                 self.maxKVSize = maxKVSize
                 self.kvBits = kvBits
                 self.kvGroupSize = kvGroupSize
                 self.quantizedKVStart = quantizedKVStart
+                self.additionalContext = additionalContext
             }
         }
 
@@ -824,9 +824,7 @@ import Foundation
             let generateParameters = toGenerateParameters(options)
 
             // Extract additional context from custom options
-            let additionalContext: [String: any Sendable]? = options[custom: MLXLanguageModel.self]
-                .flatMap { $0.additionalContext }
-                .map { $0.mapValues { $0.toSendable() } }
+            let additionalContext = options[custom: MLXLanguageModel.self]?.additionalContextForUserInput
 
             // Build chat history from full transcript
             var chat = convertTranscriptToMLXChat(session: session, fallbackPrompt: prompt.description)
@@ -1009,9 +1007,7 @@ import Foundation
                         let generateParameters = toGenerateParameters(options)
                         let chat = convertTranscriptToMLXChat(session: session, fallbackPrompt: prompt.description)
 
-                        let additionalContext: [String: any Sendable]? = options[custom: MLXLanguageModel.self]
-                            .flatMap { $0.additionalContext }
-                            .map { $0.mapValues { $0.toSendable() } }
+                        let additionalContext = options[custom: MLXLanguageModel.self]?.additionalContextForUserInput
 
                         let userInput = MLXLMCommon.UserInput(
                             chat: chat,
@@ -1553,9 +1549,7 @@ import Foundation
         let schemaPrompt = includeSchemaInPrompt ? schemaPrompt(for: schema) : nil
         let chat = normalizeChatForStructuredGeneration(baseChat, schemaPrompt: schemaPrompt)
 
-        let additionalContext: [String: any Sendable]? = options[custom: MLXLanguageModel.self]
-            .flatMap { $0.additionalContext }
-            .map { $0.mapValues { $0.toSendable() } }
+        let additionalContext = options[custom: MLXLanguageModel.self]?.additionalContextForUserInput
 
         let userInput = MLXLMCommon.UserInput(
             chat: chat,
