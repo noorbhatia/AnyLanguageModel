@@ -281,7 +281,7 @@ import Foundation
             }
 
             /// Additional key-value pairs injected into the chat template rendering context.
-            public var additionalContext: [String: MLXLMCommon.JSONValue]?
+            public var additionalContext: [String: AnyLanguageModel.JSONValue]?
 
             var additionalContextForUserInput: [String: any Sendable]? {
                 additionalContext?.mapValues { $0.toSendable() }
@@ -298,7 +298,7 @@ import Foundation
             public init(
                 kvCache: KVCache,
                 userInputProcessing: UserInputProcessing?,
-                additionalContext: [String: MLXLMCommon.JSONValue]?
+                additionalContext: [String: AnyLanguageModel.JSONValue]?
             ) {
                 self.kvCache = kvCache
                 self.additionalContext = additionalContext
@@ -1882,7 +1882,7 @@ import Foundation
             return sampledToken.item(Int.self)
         }
     }
-    extension MLXLMCommon.JSONValue {
+    extension AnyLanguageModel.JSONValue {
         /// Recursively converts a `JSONValue` to its primitive Swift equivalent.
         func toSendable() -> any Sendable {
             switch self {

@@ -4,7 +4,6 @@ import Testing
 @testable import AnyLanguageModel
 
 #if MLX
-    import MLXLMCommon
     private let shouldRunMLXTests = {
         // Enable when explicitly requested via environment variable
         if ProcessInfo.processInfo.environment["ENABLE_MLX_TESTS"] != nil {
@@ -273,9 +272,9 @@ import Testing
             )
             var custom = MLXLanguageModel.CustomGenerationOptions.default
             custom.additionalContext = [
-                "user_name": MLXLMCommon.JSONValue.string("Alice"),
-                "turn_count": MLXLMCommon.JSONValue.int(3),
-                "verbose": MLXLMCommon.JSONValue.bool(true),
+                "user_name": JSONValue.string("Alice"),
+                "turn_count": JSONValue.int(3),
+                "verbose": JSONValue.bool(true),
             ]
             options[custom: MLXLanguageModel.self] = custom
 
