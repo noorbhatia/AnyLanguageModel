@@ -4,6 +4,7 @@ import Testing
 @testable import AnyLanguageModel
 
 #if MLX
+    import MLXLMCommon
     private let shouldRunMLXTests = {
         // Enable when explicitly requested via environment variable
         if ProcessInfo.processInfo.environment["ENABLE_MLX_TESTS"] != nil {
@@ -154,7 +155,11 @@ import Testing
                 )
             ])
             let session = LanguageModelSession(model: visionModel, transcript: transcript)
-            let response = try await session.respond(to: "")
+            var options = GenerationOptions()
+            var mlxOptions = MLXLanguageModel.CustomGenerationOptions.default
+            mlxOptions.userInputProcessing = .resize(to: CGSize(width: 512, height: 512))
+            options[custom: MLXLanguageModel.self] = mlxOptions
+            let response = try await session.respond(to: "", options: options)
             #expect(!response.content.isEmpty)
         }
 
@@ -168,7 +173,11 @@ import Testing
                 )
             ])
             let session = LanguageModelSession(model: visionModel, transcript: transcript)
-            let response = try await session.respond(to: "")
+            var options = GenerationOptions()
+            var mlxOptions = MLXLanguageModel.CustomGenerationOptions.default
+            mlxOptions.userInputProcessing = .resize(to: CGSize(width: 512, height: 512))
+            options[custom: MLXLanguageModel.self] = mlxOptions
+            let response = try await session.respond(to: "", options: options)
             #expect(!response.content.isEmpty)
         }
 
