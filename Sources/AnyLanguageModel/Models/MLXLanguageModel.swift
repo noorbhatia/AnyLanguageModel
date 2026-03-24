@@ -209,7 +209,7 @@ import Foundation
             /// Sets the token offset where quantized KV storage starts.
             public var quantizedKVStart: Int
             /// Additional key-value pairs injected into the chat template rendering context.
-            public var additionalContext: [String: MLXLMCommon.JSONValue]?
+            public var additionalContext: [String: JSONValue]?
 
             var additionalContextForUserInput: [String: any Sendable]? {
                 additionalContext?.mapValues { $0.toSendable() }
@@ -231,7 +231,7 @@ import Foundation
                 kvBits: Int? = nil,
                 kvGroupSize: Int = 64,
                 quantizedKVStart: Int = 0,
-                additionalContext: [String: MLXLMCommon.JSONValue]? = nil
+                additionalContext: [String: JSONValue]? = nil
             ) {
                 self.maxKVSize = maxKVSize
                 self.kvBits = kvBits
@@ -773,13 +773,23 @@ import Foundation
         private func makeUserInput(
             session: LanguageModelSession,
             fallbackPrompt: String,
-            tools: [ToolSpec]?
+            tools: [ToolSpec]?,
+            additionalContext: [String: any Sendable]? = nil
         ) -> MLXLMCommon.UserInput {
             let chat = convertTranscriptToMLXChat(session: session, fallbackPrompt: fallbackPrompt)
+            return makeUserInput(chat: chat, tools: tools, additionalContext: additionalContext)
+        }
+
+        private func makeUserInput(
+            chat: [MLXLMCommon.Chat.Message],
+            tools: [ToolSpec]?,
+            additionalContext: [String: any Sendable]? = nil
+        ) -> MLXLMCommon.UserInput {
             return MLXLMCommon.UserInput(
                 chat: chat,
                 processing: .init(resize: .init(width: 512, height: 512)),
-                tools: tools
+                tools: tools,
+                additionalContext: additionalContext,
             )
         }
 
@@ -838,11 +848,10 @@ import Foundation
             // Loop until no more tool calls
             while true {
                 // Build user input with current chat history and tools
-                let userInput = MLXLMCommon.UserInput(
+                let userInput = makeUserInput(
                     chat: chat,
-                    processing: .init(resize: .init(width: 512, height: 512)),
                     tools: toolSpecs,
-                    additionalContext: additionalContext,
+                    additionalContext: additionalContext
                 )
                 let lmInput = try await context.processor.prepare(input: userInput)
                 let resolved = resolveCache(
@@ -1005,13 +1014,11 @@ import Foundation
 
                         // Build chat inside task to avoid Sendable issues
                         let generateParameters = toGenerateParameters(options)
-                        let chat = convertTranscriptToMLXChat(session: session, fallbackPrompt: prompt.description)
-
                         let additionalContext = options[custom: MLXLanguageModel.self]?.additionalContextForUserInput
 
-                        let userInput = MLXLMCommon.UserInput(
-                            chat: chat,
-                            processing: .init(resize: .init(width: 512, height: 512)),
+                        let userInput = makeUserInput(
+                            session: session,
+                            fallbackPrompt: prompt.description,
                             tools: nil,
                             additionalContext: additionalContext
                         )
@@ -1551,11 +1558,10 @@ import Foundation
 
         let additionalContext = options[custom: MLXLanguageModel.self]?.additionalContextForUserInput
 
-        let userInput = MLXLMCommon.UserInput(
+        let userInput = makeUserInput(
             chat: chat,
-            processing: .init(resize: .init(width: 512, height: 512)),
             tools: nil,
-            additionalContext: additionalContext,
+            additionalContext: additionalContext
         )
         let lmInput = try await context.processor.prepare(input: userInput)
 
@@ -1796,7 +1802,7 @@ import Foundation
             return sampledToken.item(Int.self)
         }
     }
-    extension MLXLMCommon.JSONValue {
+    extension JSONValue {
         /// Recursively converts a `JSONValue` to its primitive Swift equivalent.
         func toSendable() -> any Sendable {
             switch self {
