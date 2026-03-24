@@ -281,7 +281,7 @@ import Foundation
             }
 
             /// Additional key-value pairs injected into the chat template rendering context.
-            public var additionalContext: [String: JSONValue]?
+            public var additionalContext: [String: MLXLMCommon.JSONValue]?
 
             var additionalContextForUserInput: [String: any Sendable]? {
                 additionalContext?.mapValues { $0.toSendable() }
@@ -298,7 +298,7 @@ import Foundation
             public init(
                 kvCache: KVCache,
                 userInputProcessing: UserInputProcessing?,
-                additionalContext: [String: JSONValue]?
+                additionalContext: [String: MLXLMCommon.JSONValue]?
             ) {
                 self.kvCache = kvCache
                 self.additionalContext = additionalContext
@@ -1591,7 +1591,7 @@ import Foundation
         {
             header += ". Expected value: \(constString)"
         } else if let enumValues = jsonSchema.enum, !enumValues.isEmpty,
-            let data = try? encoder.encode(JSONValue.array(enumValues)),
+            let data = try? encoder.encode(enumValues),
             let enumString = String(data: data, encoding: .utf8)
         {
             header += ". Allowed values: \(enumString)"
@@ -1637,11 +1637,11 @@ import Foundation
             options[custom: MLXLanguageModel.self]?.processingForUserInput
             ?? .init(resize: nil)
 
-        let userInput = makeUserInput(
+        let userInput = MLXLMCommon.UserInput(
             chat: chat,
-            tools: nil,
             processing: userInputProcessing,
-            additionalContext: additionalContext
+            tools: nil,
+            additionalContext: additionalContext,
         )
         let lmInput = try await context.processor.prepare(input: userInput)
 
@@ -1882,7 +1882,7 @@ import Foundation
             return sampledToken.item(Int.self)
         }
     }
-    extension JSONValue {
+    extension MLXLMCommon.JSONValue {
         /// Recursively converts a `JSONValue` to its primitive Swift equivalent.
         func toSendable() -> any Sendable {
             switch self {

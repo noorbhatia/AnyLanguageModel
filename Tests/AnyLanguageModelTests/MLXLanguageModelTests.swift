@@ -264,9 +264,9 @@ import Testing
             )
             var custom = MLXLanguageModel.CustomGenerationOptions.default
             custom.additionalContext = [
-                "user_name": .string("Alice"),
-                "turn_count": .int(3),
-                "verbose": .bool(true),
+                "user_name": MLXLMCommon.JSONValue.string("Alice"),
+                "turn_count": MLXLMCommon.JSONValue.int(3),
+                "verbose": MLXLMCommon.JSONValue.bool(true),
             ]
             options[custom: MLXLanguageModel.self] = custom
 
