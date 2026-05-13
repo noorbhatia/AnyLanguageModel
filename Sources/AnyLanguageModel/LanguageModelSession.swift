@@ -13,6 +13,18 @@ public final class LanguageModelSession: @unchecked Sendable {
         return state.withLock { $0.transcript }
     }
 
+    /// The number of tokens currently committed to the active provider's
+    /// on-device KV cache for this session.
+    ///
+    /// Distinct from per-response token usage (`Response.usage`): this reflects
+    /// live, in-memory cache state, not API-reported request metrics. Currently
+    /// populated only by `MLXLanguageModel`; all other providers return `nil`.
+    public var kvCacheTokens: Int? {
+        get async {
+            await model.kvCacheTokens(for: self)
+        }
+    }
+
     @ObservationIgnored private let state: Locked<State>
 
     private let model: any LanguageModel

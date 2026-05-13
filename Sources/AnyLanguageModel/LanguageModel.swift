@@ -39,6 +39,16 @@ public protocol LanguageModel: Sendable {
         issues: [LanguageModelFeedback.Issue],
         desiredOutput: Transcript.Entry?
     ) -> Data
+
+    func kvCacheTokens(for session: LanguageModelSession) async -> Int?
+
+    /// Release any model-scoped memory held by the model (weights, KV caches, GPU buffer pools)
+    /// to relieve memory pressure before a memory-intensive operation such as transcript
+    /// compaction. The model is expected to lazy-reload anything it needs on the next call.
+    ///
+    /// Backends without a resident footprint (cloud, FoundationModels) inherit the default no-op.
+    /// MLX overrides this to drop weights and all per-session KV caches via `removeFromCache()`.
+    func purgeForCompaction() async
 }
 
 // MARK: - Default Implementation
@@ -66,6 +76,14 @@ extension LanguageModel {
         desiredOutput: Transcript.Entry? = nil
     ) -> Data {
         return Data()
+    }
+
+    public func kvCacheTokens(for session: LanguageModelSession) async -> Int? {
+        nil
+    }
+
+    public func purgeForCompaction() async {
+        return
     }
 }
 

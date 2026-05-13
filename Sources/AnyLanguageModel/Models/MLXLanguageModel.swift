@@ -674,6 +674,16 @@ import Foundation
             GPUMemoryManager.shared.evictIfSafe()
         }
 
+        /// MLX-backed implementation of `LanguageModel.purgeForCompaction`.
+        ///
+        /// Releases weights, every per-session KV cache for this model, and the GPU buffer
+        /// pool — strictly a superset of what compaction needs. The next inference call
+        /// triggers a lazy reload via `loadContext()`. Callers should treat this as
+        /// "expensive but bounded" (3–10s reload on 1B+ models) and gate it accordingly.
+        public func purgeForCompaction() async {
+            await removeFromCache()
+        }
+
         /// Get or load model context with caching
         private func loadContext(modelId: String, hub: HubApi?, directory: URL?) async throws -> ModelContext {
             let key = directory?.absoluteString ?? modelId
@@ -1209,6 +1219,10 @@ import Foundation
                     // Ignore errors during prewarm
                 }
             }
+        }
+
+        public func kvCacheTokens(for session: LanguageModelSession) async -> Int? {
+            getSessionCache(for: session)?.prefillTokenCount
         }
     }
 
